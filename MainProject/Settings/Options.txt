@@ -1,0 +1,46 @@
+﻿* AIMMS
+listing_page_width 256000
+MIP_relative_optimality_tolerance 0.001
+put_string_width 32766
+rounding_compatibility Aimms_3_7
+seed 1
+solver_listing 3
+solver_listing_messages 4
+Suppress_error_messages_of_val_function 1
+time_limit 300
+use_UTC_forCaseAndStartEndDate 1
+warning_index_domain_violation off
+warning_missing_semicolon off
+warning_not_initialized off
+xml_encoding Utf8
+* AOA
+* BARON 21
+* CBC 2.9
+"CBC 2.9".MIP_start 1
+"CBC 2.9".MIP_print_frequency 1
+"CBC 2.9".Status_file 1
+* CONOPT 4.1
+* CPLEX 20.1
+"CPLEX 20.1".advanced_start 1
+"CPLEX 20.1".global_thread_limit 2
+"CPLEX 20.1".MIP_display 4
+"CPLEX 20.1".MIP_interval 1
+"CPLEX 20.1".tuning_display 2
+* CPOptimizer 20.1
+* GUROBI 9.5
+"GUROBI 9.5".MIP_start 1
+"GUROBI 9.5".Log_to_console 1
+"GUROBI 9.5".Output_file 1
+* IPOPT 3.11
+* Knitro 12.3
+* MINOS
+* ODH-CPLEX 5.3
+* PATH 4.7
+* SNOPT 7.2
+* CPLEX 12.8
+"CPLEX 12.8".global_thread_limit 2
+* NETSOL
+* Environment
+Startup_Layout 1
+IDE_Theme 4
+Default_UI 0

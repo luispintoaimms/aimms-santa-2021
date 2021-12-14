@@ -1,0 +1,518 @@
+## ams_version=1.0
+
+Model Main_Santa2021 {
+	Section MathModel {
+		Set S_DEF_DepotAndPermutations {
+			Index: nd, nd2;
+			Definition: {
+				!depot + all possible permutations
+				{ Depot } + S_Permutations
+			}
+		}
+		Macro Depot {
+			Definition: 'Depot';
+			Comment: "Fixed origin node";
+		}
+		ElementParameter Pe_DEF_Depot {
+			Range: S_DEF_DepotAndPermutations;
+			Definition: Depot;
+			Comment: "Fixed origin node";
+		}
+		Set S_EXE_DepotAndPermutations {
+			SubsetOf: S_DEF_DepotAndPermutations;
+			Index: exe_nd, exe_nd2;
+			Comment: "Subset of Permutations to be run";
+		}
+		Set S_EXE_ElfGroups {
+			SubsetOf: S_ElfGroup;
+			Index: exe_eg;
+			Comment: "Subset of Elf Groups to be run";
+		}
+		DeclarationSection Variables_and_Constraints {
+			Variable V_Transport {
+				IndexDomain: (exe_nd,exe_nd2,exe_eg) | P_DOM_V_Transport(exe_nd, exe_nd2, exe_eg);
+				Range: binary;
+				Comment: "Variable that links one node to the next";
+			}
+			Parameter P_EXE_MaxDistance {
+				InitialData: 6;
+				Comment: "Limits the max distance between nodes allowed";
+			}
+			Parameter P_EXE_MaxDistanceFreeAndForced {
+				InitialData: 6;
+				Comment: "Limits the max distance between nodes allowed (but considering free nodes and forced nodes)";
+			}
+			Parameter P_DOM_V_Transport {
+				IndexDomain: (exe_nd,exe_nd2,exe_eg);
+				Definition: {
+					!No inner loop
+					(exe_nd <> exe_nd2) and
+					(
+					    ! Always connected to depot
+					    (exe_nd = Pe_DEF_Depot) or (exe_nd2 = Pe_DEF_Depot)
+					    ! Always allow heuristic allocation
+					    or (P_Allocation(exe_eg, exe_nd, exe_nd2))
+					    !Max distance to subsequent node
+					    or (P_Distance(exe_nd, exe_nd2) < P_EXE_MaxDistance)
+					    !Max distance between free and forced permutations (maybe more tricky?)
+					    or (
+					        (exe_nd in S_DEF_FreePermutations)
+					        and (exe_nd2 in S_DEF_ForcedPermutations) 
+					        and (P_Distance(exe_nd, exe_nd2) < P_EXE_MaxDistanceFreeAndForced))
+					    or (
+					        (exe_nd in S_DEF_ForcedPermutations)
+					        and  (exe_nd2 in S_DEF_FreePermutations)
+					        and (P_Distance(exe_nd, exe_nd2) < P_EXE_MaxDistanceFreeAndForced))
+					        )
+				}
+				Comment: "Domain index to limit the size of the transport variable";
+			}
+			Variable V_MaxLength {
+				Range: free;
+				Comment: "Objective function - Maximum size of distances travelled";
+			}
+			Constraint C_BalanceIn {
+				IndexDomain: (exe_nd,exe_eg);
+				Definition: sum(exe_nd2, V_Transport(exe_nd2, exe_nd, exe_eg)) = 1;
+				Comment: "Guarantee\'s there is a connection in to an allocated permutation/node of an elf group";
+			}
+			Constraint C_BalanceOut {
+				IndexDomain: (exe_nd,exe_eg);
+				Definition: sum(exe_nd2, V_Transport(exe_nd, exe_nd2, exe_eg)) = 1;
+				Comment: "Guarantee\'s there is a connection out of an allocated permutation/node of an elf group";
+			}
+			Constraint C_MaxLength {
+				IndexDomain: exe_eg;
+				Definition: V_MaxLength >= sum((exe_nd, exe_nd2), P_Distance(exe_nd, exe_nd2) * V_Transport(exe_nd, exe_nd2, exe_eg));
+				Comment: "Max length always larger than/equal too all individual elf group permutation size";
+			}
+		}
+		DeclarationSection MTZ_Formulation {
+			Set S_EXE_Permutations {
+				SubsetOf: S_DEF_DepotAndPermutations;
+				Index: exe_p, exe_p2;
+				Definition: S_EXE_DepotAndPermutations - Pe_DEF_Depot;
+				Comment: "Subset of Permutations to be run";
+			}
+			Parameter P_EXE_MaxAllocation {
+				IndexDomain: exe_eg;
+				Definition: sum(p_free, P_SelectedPermutations(exe_eg, p_free)) + card(S_DEF_ForcedPermutations);
+			}
+			Variable V_MTZ {
+				IndexDomain: (exe_p,exe_eg);
+				Range: nonnegative;
+				Comment: "Miller Tucket Zemlin varible";
+			}
+			Constraint C_SubtourMTZ1 {
+				IndexDomain: (exe_p,exe_eg);
+				Definition: 0 <= V_MTZ(exe_p, exe_eg) <= P_EXE_MaxAllocation(exe_eg);
+				Comment: "MTZ - https://how-to.aimms.com/Articles/332/332-Miller-Tucker-Zemlin-formulation.html";
+			}
+			Constraint C_SubtourMTZ2 {
+				IndexDomain: (exe_p,exe_p2,exe_eg) | P_DOM_V_Transport(exe_p, exe_p2, exe_eg);
+				Definition: V_MTZ(exe_p2, exe_eg) - V_MTZ(exe_p, exe_eg) >= 1 - P_EXE_MaxAllocation(exe_eg) * (1 - V_Transport(exe_p, exe_p2, exe_eg));
+				Comment: "Subtour elimination - https://how-to.aimms.com/Articles/332/332-Miller-Tucker-Zemlin-formulation.html";
+			}
+			Set S_VariablesMTZ {
+				SubsetOf: AllVariablesConstraints;
+				Definition: AllVariables * MathModel;
+				Comment: "MTZ Variables + Original";
+			}
+			Set S_ConstraintsMTZ {
+				SubsetOf: AllVariablesConstraints;
+				Definition: AllConstraints * MathModel;
+				Comment: "MTZ Constraints + Original";
+			}
+			MathematicalProgram MP_MinMaxLengthMTZ {
+				Objective: V_MaxLength;
+				Direction: minimize;
+				Constraints: S_ConstraintsMTZ;
+				Variables: S_VariablesMTZ;
+				Type: Automatic;
+				Comment: "Complete model with subtour elimination (MTZ)";
+			}
+		}
+		Procedure Proc_RunMTZ {
+			Body: {
+				!ShowProgressWindow(1);
+				!solve MP_MinMaxLengthMTZ;
+				!
+				! ONLY FOR DEBUGGING! SHOULD NOT BE USED !
+			}
+		}
+	}
+	Section Heuristic {
+		Set S_AllocationList {
+			SubsetOf: Integers;
+			Index: alloc;
+			Parameter: EP_Alloc;
+			Property: ElementsAreNumerical;
+			Definition: {
+				{1 .. Card(S_DEF_DepotAndPermutations)}
+			}
+			Comment: "Sequential order of permutation";
+		}
+		Parameter P_SelectedPermutations {
+			IndexDomain: (eg,p);
+			Range: binary;
+			Comment: "Defines if the subset of p is allocated to eg";
+		}
+		Parameter P_Allocation {
+			IndexDomain: (eg,nd,nd2);
+			Range: binary;
+			Comment: "Pre selected transport done by heuristic";
+		}
+		ElementParameter EP_AllocationOrder {
+			IndexDomain: (eg, alloc);
+			Range: S_DEF_DepotAndPermutations;
+			Comment: "Pre selected permutations done by heuristic";
+		}
+		Procedure Proc_HeursticAllocation {
+			Body: {
+				empty P_SelectedPermutations, P_Allocation, EP_AllocationOrder;
+				
+				! in order to reproduce results
+				option seed := 1; 
+				
+				EP_Alloc := 1;
+				EP_AllocationOrder(eg, EP_Alloc) := Pe_DEF_Depot;
+				EP_Alloc += 1;
+				
+				! randomly selecting the first node to explore
+				for eg do
+				    EP_Permutation 
+				    :=  Nth(p | not exists(eg2 | P_SelectedPermutations(eg2, p)), round(uniform(0.5, card(p))));
+				    EP_LastPermutation(eg) := EP_Permutation;
+				    P_SelectedPermutations(eg, EP_Permutation) := 1;
+				    P_Allocation(eg,Pe_DEF_Depot,EP_Permutation) := 1;
+				    EP_AllocationOrder(eg, EP_Alloc) := EP_Permutation;
+				endfor;
+				EP_Alloc += 1;
+				
+				!continues to add permutations to elf groups with a greedy approach (must include all forced 
+				!and exhaust free between all elf groups
+				while 
+				    Exists(p_free | not Exists(eg | P_SelectedPermutations(eg, p_free)))
+				    or Exists(p_forced | sum(eg, P_SelectedPermutations(eg, p_forced)) < Card(eg))
+				do
+				    for 
+				        eg
+				    do
+				        EP_Permutation 
+				        :=  ArgMin(p | 
+				                (p <> EP_LastPermutation(eg))
+				                and ((p in S_DEF_FreePermutations and
+				                    (not Exists(eg2 | P_SelectedPermutations(eg2, p))))
+				                    or 
+				                    ((p in S_DEF_ForcedPermutations) and
+				                    (not P_SelectedPermutations(eg, p)))),
+				                P_Distance(EP_LastPermutation(eg), p));
+				        if EP_Permutation <> '' then
+				            P_Allocation(eg,EP_LastPermutation(eg),EP_Permutation) := 1;
+				            EP_LastPermutation(eg) := EP_Permutation;
+				            P_SelectedPermutations(eg, EP_Permutation) := 1;
+				            EP_AllocationOrder(eg, EP_Alloc) := EP_Permutation;
+				        endif;
+				    endfor;
+				    EP_Alloc += 1;
+				endwhile;
+				
+				! Always finalize back to depot
+				P_Allocation(eg, EP_LastPermutation(eg),Pe_DEF_Depot) := 1
+			}
+			Set S_LOC_FreePermutations {
+				SubsetOf: S_DEF_FreePermutations;
+				Index: loc_p_free;
+			}
+			ElementParameter EP_LastPermutation {
+				IndexDomain: eg;
+				Range: S_Permutations;
+			}
+		}
+		Procedure Proc_HeursticRun {
+			Body: {
+				empty Results;
+				ShowProgressWindow(1);
+				
+				! The model is run per elf group
+				for eg do
+				    ! selecting the subset of permutations and elf groups to be run
+				    S_EXE_DepotAndPermutations := Pe_DEF_Depot + {p | P_SelectedPermutations(eg, p)};
+				    S_EXE_ElfGroups := {eg};
+				
+				    ! configuring max distance between nodes
+				    P_EXE_MaxDistance := 5;
+				    P_EXE_MaxDistanceFreeAndForced := 7;
+				
+				    ! feeding the variable with the heuristic solution
+				    V_Transport(exe_nd,exe_nd2,exe_eg) := P_Allocation(exe_eg,exe_nd,exe_nd2);
+				    V_MaxLength := sum((exe_nd, exe_nd2), P_Distance(exe_nd, exe_nd2) * V_Transport(exe_nd, exe_nd2, eg));
+				    for alloc | EP_AllocationOrder(eg,alloc) in S_EXE_Permutations do
+				        V_MTZ(EP_AllocationOrder(eg,alloc),exe_eg) := alloc - 1;
+				    endfor;
+				
+				    ! setting run options 
+				    option time_limit := 300;
+				    option MIP_relative_optimality_tolerance := 0.001;
+				
+				    ! Solve the model
+				    solve MP_MinMaxLengthMTZ;
+				
+				    ! Saver results
+				    P_SOL_Transport(exe_eg,exe_nd,exe_nd2) := V_Transport(exe_nd, exe_nd2, exe_eg);
+				    P_SOL_MTZ(exe_p,exe_eg) := V_MTZ(exe_p,exe_eg);
+				
+				    ! extracting the order of visits
+				    S_LOC_Permutations := S_EXE_Permutations;
+				    EP_Permutation := First(nd2 | P_SOL_Transport(eg, Pe_DEF_Depot, nd2));
+				    EP_Alloc := 1;
+				    EP_SOL_AllocationOrder(eg,EP_Alloc) := EP_Permutation;
+				    EP_Alloc += 1;
+				    S_LOC_Permutations := S_LOC_Permutations - EP_Permutation;
+				    while card(S_LOC_Permutations) do
+				        EP_Permutation := First(nd2 | P_SOL_Transport(eg, EP_Permutation, nd2));
+				        EP_SOL_AllocationOrder(eg,EP_Alloc) := EP_Permutation;
+				        EP_Alloc += 1;
+				        S_LOC_Permutations := S_LOC_Permutations - EP_Permutation;
+				    endwhile;
+				
+				    ! Creating the kaggle output string
+				    EP_Alloc := 1;
+				    EP_Permutation := EP_SOL_AllocationOrder(eg,EP_Alloc);
+				    SP_FinalSequence(eg) := EP_Permutation;    
+				    for alloc | EP_SOL_AllocationOrder(eg,alloc) and alloc <> 1 do
+				        SP_FinalSequence(eg) := SP_FinalSequence(eg) + Substring(EP_SOL_AllocationOrder(eg,alloc),2 * (7 - P_Distance(EP_Permutation, EP_SOL_AllocationOrder(eg,alloc))) + 1,15);
+				        EP_Permutation :=  EP_SOL_AllocationOrder(eg,alloc);
+				    endfor;
+				endfor;
+			}
+			Set S_LOC_Permutations {
+				SubsetOf: S_EXE_Permutations;
+				Index: loc_p;
+			}
+		}
+	}
+	Section Initial_Data {
+		DeclarationSection Main_Data {
+			Set S_Letters {
+				Index: l,l2,l3,l4,l5,l6,l7;
+				Definition: {
+					data {
+					    '🎅',  ! father christmas
+					    '🤶',  ! mother christmas
+					    '🦌',  ! reindeer
+					    '🧝',  ! elf
+					    '🎄',  ! christmas tree
+					    '🎁',  ! gift
+					    '🎀'  ! ribbon
+					}
+				}
+				Comment: "AIMMS IDE cannot render properly the UTF-8 (?) emotes used. These are the films";
+			}
+			Set S_Permutations {
+				SubsetOf: S_DEF_DepotAndPermutations;
+				Index: p, p2;
+				Parameter: EP_Permutation, EP_Permutation2;
+				Comment: "Total permutations (combinations/sequences of films/letters) available";
+			}
+			Set S_DEF_ForcedPermutations {
+				SubsetOf: S_Permutations;
+				Index: p_forced;
+				Definition: {
+					{ p | Substring(p,1,4) = "🎅🤶" } !Father Xmas + Mother Xmas
+				}
+				Comment: "All permutations that must be in all elf groups";
+			}
+			Set S_DEF_FreePermutations {
+				SubsetOf: S_Permutations;
+				Index: p_free, p_free2;
+				Definition: S_Permutations - S_DEF_ForcedPermutations;
+				Comment: "All permutations that must be in at least one elf groups";
+			}
+			Parameter P_Distance {
+				IndexDomain: (p,p2);
+				Default: 999;
+				Comment: {
+					"Distance between permutations
+					If distance is \"complete\" (no similarity) than 999"
+				}
+			}
+			Set S_ElfGroup {
+				SubsetOf: Integers;
+				Index: eg, eg2;
+				Definition: {
+					{1 .. 3}
+				}
+				Comment: "All elf groups";
+			}
+		}
+		Procedure Proc_GeneratePermutations {
+			Body: {
+				empty S_Permutations;
+				cleanup S_Permutations;
+				cleandependents S_Permutations;
+				
+				for (l,l2,l3,l4,l5,l6,l7) | 
+				        l <> l2
+				        and l <> l3
+				        and l <> l4
+				        and l <> l5
+				        and l <> l6
+				        and l <> l7
+				        and l2 <> l3
+				        and l2 <> l4
+				        and l2 <> l5
+				        and l2 <> l6
+				        and l2 <> l7
+				        and l3 <> l4
+				        and l3 <> l5
+				        and l3 <> l6
+				        and l3 <> l7
+				        and l4 <> l5
+				        and l4 <> l6
+				        and l4 <> l7
+				        and l5 <> l6
+				        and l5 <> l7
+				        and l6 <> l7
+				do
+				    SetElementAdd(S_Permutations, EP_Permutation, FormatString("%s%s%s%s%s%s%s",l,l2,l3,l4,l5,l6,l7));
+				endfor;
+				
+				DialogMessage(Card(S_Permutations)  + " Created");
+			}
+			Comment: "Very \"Hard-coded\" generation of permutations.";
+			Index i1;
+			Index i2;
+			Index i3;
+			Index i4;
+			Index i5;
+			Index i6;
+		}
+		Procedure Proc_CalculateDistances {
+			Body: {
+				if DialogAsk("This will take a long time. Are you sure?", "Yes", "No") = 1 then
+				    empty P_Distance;
+				    for p  do
+				        for p2 | p2 <> p do
+				            P_Distance(p,p2) := Proc_Distance(p,p2);
+				        endfor;
+				    endfor;
+				endif;
+			}
+			Comment: "Very costly calculation of distances between permutations";
+		}
+		Procedure Proc_Distance {
+			Arguments: (p,p2);
+			Body: {
+				S_LOC_Size := {0 .. (card(S_Letters)-1)};
+				for s do
+				    if Substring(p,1+(s*2),StringLength(p)) = Substring(p2,1,StringLength(p)-(s*2)) then
+				        return s;
+				    endif;
+				endfor;
+				return 999;
+			}
+			Comment: "Costly calculation of distances between 2 permutations";
+			Set S_LOC_Size {
+				SubsetOf: Integers;
+				Index: s;
+			}
+			ElementParameter p {
+				Range: S_Permutations;
+				Property: Input;
+			}
+			ElementParameter p2 {
+				Range: S_Permutations;
+				Property: Input;
+			}
+			Parameter P_MinDistance;
+		}
+	}
+	Section Results {
+		Parameter P_SOL_Transport {
+			IndexDomain: (eg,nd,nd2);
+			Range: binary;
+		}
+		Parameter P_SOL_MTZ {
+			IndexDomain: (p,eg);
+		}
+		ElementParameter EP_SOL_AllocationOrder {
+			IndexDomain: (eg,alloc);
+			Range: S_Permutations;
+		}
+		StringParameter SP_FinalSequence {
+			IndexDomain: eg;
+		}
+		File F_Submission {
+			Name: "submission.csv";
+			Device: Disk;
+			Mode: replace;
+		}
+		Procedure Proc_ExportToKaggle {
+			Body: {
+				PUT F_Submission ;
+				PUT "schedule" ;
+				for eg do
+				    PUT /;
+				    PUT SP_FinalSequence(eg)
+				endfor;
+				PUTCLOSE;
+			}
+		}
+	}
+	Procedure MainInitialization {
+		Comment: "Add initialization statements here that do NOT require any library being initialized already.";
+	}
+	Procedure PostMainInitialization {
+		Comment: {
+			"Add initialization statements here that require that the libraries are already initialized properly,
+			or add statements that require the Data Management module to be initialized."
+		}
+	}
+	Procedure MainExecution {
+		Body: {
+			CaseFileLoad("data\\Case Complete.data");
+			Proc_HeursticAllocation;
+			Proc_HeursticRun;
+			Proc_ExportToKaggle;
+		}
+	}
+	Procedure PreMainTermination {
+		Body: {
+			return DataManagementExit();
+		}
+		Comment: {
+			"Add termination statements here that require all libraries to be still alive.
+			Return 1 if you allow the termination sequence to continue.
+			Return 0 if you want to cancel the termination sequence."
+		}
+	}
+	Procedure MainTermination {
+		Body: {
+			return 1;
+		}
+		Comment: {
+			"Add termination statements here that do not require all libraries to be still alive.
+			Return 1 to allow the termination sequence to continue.
+			Return 0 if you want to cancel the termination sequence.
+			It is recommended to only use the procedure PreMainTermination to cancel the termination sequence and let this procedure always return 1."
+		}
+	}
+	Section Quantities_and_Units {
+		Comment: {
+			"This section contains all the units and quantities that are added automatically by AIMMS.
+			It is recommended to declare all your quantities here."
+		}
+		Quantity SI_Time_Duration {
+			BaseUnit: s;
+			Conversions: minute->s : #-># * 60;
+			Comment: {
+				"Expresses the value for the duration of periods.
+				
+				The unit s has been added automatically because it is a required unit for AimmsWebUI.
+				
+				The unit minute has been added automatically because it is a required unit for AimmsWebUI."
+			}
+		}
+	}
+}
