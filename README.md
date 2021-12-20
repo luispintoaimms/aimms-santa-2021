@@ -3,7 +3,8 @@ A simple AIMMS project to address the Santa 2021 Kaggle challenge.
 
 ## How to run
 In order to run the project, you can use the MainExecution procedure or follow the 4 steps below:
-1. Case load the “Complete cases.data” file - This will load the case file with base data
+1. Run Proc_GeneratePermutations - This generates all permutations and saves them in the permutations set.
+2. Run Proc_CalculateDistances - This calculates distances between permutations. Any incompatible permutations will have a 999 distance.
 3. Run the Proc_HeuristicAllocation - This will run an allocation heuristic splitting the problem into 3 (1 for each elf group)
 4. Run the Proc_HeuristicRun - This will run the TSP with MLZ formulation for each elf group individually)
 5. Run the Proc_ExportToKaggle - This will generate a csv file ready to submit to the Kaggle challenge
@@ -11,7 +12,7 @@ In order to run the project, you can use the MainExecution procedure or follow t
 ## Additional information
 Some disclaimers and information on the implementation:
 1. Due to complexity this implementation is not a global optimization model. I applied some heuristics, and I broke the model into smaller portions to make it feasible to run on my laptop.
-2. I had some issues with the encoding of the files provided by Kaggle. You can find a case file (data/Case complete.data) that contains the permutations and distances. The generation of this code can be found in Proc_GeneratePermutations and Proc_CalculateDistances. Caution in using the distance calculation since it takes a few minutes to run.
+2. I had some issues with the encoding of the files provided by Kaggle. You view the permutation generations procedure at Proc_GeneratePermutations and Proc_CalculateDistances.
     * With the encoding problems, each film string is represented by 2 characters. You’ll notice I use this information in certain Substring call, multiplying by 2 the size of the string.
 3. The model strategy is:
     * A greedy algorithm allocates the film permutations to each individual elf group in a simple “minimum distance from previous permutation” approach. All forced permutations (as per described in the challenge) are included in this process as well. The process is finished when all elf groups have all forced permutations and also the free permutations have been picked up by 1 group. First permutation is randomly assigned to each group. You can find the algorithm in Proc_HeuristicAllocation.

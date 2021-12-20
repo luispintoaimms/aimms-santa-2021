@@ -315,6 +315,27 @@ Model Main_Santa2021 {
 				Parameter: EP_Permutation, EP_Permutation2;
 				Comment: "Total permutations (combinations/sequences of films/letters) available";
 			}
+			Parameter P_PermutationV1 {
+				IndexDomain: p;
+			}
+			Parameter P_PermutationV2 {
+				IndexDomain: p;
+			}
+			Parameter P_PermutationV3 {
+				IndexDomain: p;
+			}
+			Parameter P_PermutationV4 {
+				IndexDomain: p;
+			}
+			Parameter P_PermutationV5 {
+				IndexDomain: p;
+			}
+			Parameter P_PermutationV6 {
+				IndexDomain: p;
+			}
+			Parameter P_PermutationV7 {
+				IndexDomain: p;
+			}
 			Set S_DEF_ForcedPermutations {
 				SubsetOf: S_Permutations;
 				Index: p_forced;
@@ -376,9 +397,17 @@ Model Main_Santa2021 {
 				        and l6 <> l7
 				do
 				    SetElementAdd(S_Permutations, EP_Permutation, FormatString("%s%s%s%s%s%s%s",l,l2,l3,l4,l5,l6,l7));
+				    P_PermutationV1(EP_Permutation) := ord(l);
+				    P_PermutationV2(EP_Permutation) := ord(l2);
+				    P_PermutationV3(EP_Permutation) := ord(l3);
+				    P_PermutationV4(EP_Permutation) := ord(l4);
+				    P_PermutationV5(EP_Permutation) := ord(l5);
+				    P_PermutationV6(EP_Permutation) := ord(l6);
+				    P_PermutationV7(EP_Permutation) := ord(l7);
 				endfor;
 				
-				DialogMessage(Card(S_Permutations)  + " Created");
+				
+				!DialogMessage(Card(S_Permutations)  + " Created");
 			}
 			Comment: "Very \"Hard-coded\" generation of permutations.";
 			Index i1;
@@ -390,42 +419,17 @@ Model Main_Santa2021 {
 		}
 		Procedure Proc_CalculateDistances {
 			Body: {
-				if DialogAsk("This will take a long time. Are you sure?", "Yes", "No") = 1 then
-				    empty P_Distance;
-				    for p  do
-				        for p2 | p2 <> p do
-				            P_Distance(p,p2) := Proc_Distance(p,p2);
-				        endfor;
-				    endfor;
-				endif;
+				empty P_Distance;
+				
+				P_Distance(p,p2) := 999;
+				P_Distance(p,p2) | P_PermutationV7(p) = P_PermutationV1(p2) := 6;
+				P_Distance(p,p2) | P_PermutationV6(p) = P_PermutationV1(p2) and P_PermutationV7(p) = P_PermutationV2(p2) := 5;
+				P_Distance(p,p2) | P_PermutationV5(p) = P_PermutationV1(p2) and P_PermutationV6(p) = P_PermutationV2(p2) and P_PermutationV7(p) = P_PermutationV3(p2) := 4;
+				P_Distance(p,p2) | P_PermutationV4(p) = P_PermutationV1(p2) and P_PermutationV5(p) = P_PermutationV2(p2) and P_PermutationV6(p) = P_PermutationV3(p2) and P_PermutationV7(p) = P_PermutationV4(p2) := 3;
+				P_Distance(p,p2) | P_PermutationV3(p) = P_PermutationV1(p2) and P_PermutationV4(p) = P_PermutationV2(p2) and P_PermutationV5(p) = P_PermutationV3(p2) and P_PermutationV6(p) = P_PermutationV4(p2) and P_PermutationV7(p) = P_PermutationV5(p2) := 2;
+				P_Distance(p,p2) | P_PermutationV2(p) = P_PermutationV1(p2) and P_PermutationV3(p) = P_PermutationV2(p2) and P_PermutationV4(p) = P_PermutationV3(p2) and P_PermutationV5(p) = P_PermutationV4(p2) and P_PermutationV6(p) = P_PermutationV5(p2) and P_PermutationV7(p) = P_PermutationV6(p2) := 1;
 			}
 			Comment: "Very costly calculation of distances between permutations";
-		}
-		Procedure Proc_Distance {
-			Arguments: (p,p2);
-			Body: {
-				S_LOC_Size := {0 .. (card(S_Letters)-1)};
-				for s do
-				    if Substring(p,1+(s*2),StringLength(p)) = Substring(p2,1,StringLength(p)-(s*2)) then
-				        return s;
-				    endif;
-				endfor;
-				return 999;
-			}
-			Comment: "Costly calculation of distances between 2 permutations";
-			Set S_LOC_Size {
-				SubsetOf: Integers;
-				Index: s;
-			}
-			ElementParameter p {
-				Range: S_Permutations;
-				Property: Input;
-			}
-			ElementParameter p2 {
-				Range: S_Permutations;
-				Property: Input;
-			}
-			Parameter P_MinDistance;
 		}
 	}
 	Section Results {
@@ -471,7 +475,9 @@ Model Main_Santa2021 {
 	}
 	Procedure MainExecution {
 		Body: {
-			CaseFileLoad("data\\Case Complete.data");
+			!CaseFileLoad("data\\Case Complete.data");
+			Proc_GeneratePermutations;
+			Proc_CalculateDistances;
 			Proc_HeursticAllocation;
 			Proc_HeursticRun;
 			Proc_ExportToKaggle;
